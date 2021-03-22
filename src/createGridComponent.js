@@ -62,6 +62,27 @@ type InnerProps = {|
   },
 |};
 
+type CellProps = {|
+  column: number,
+  key: string,
+  row: number,
+|};
+
+type CellAllocator<T> = (
+  columnStartIndex: number,
+  columnStopIndex: number,
+  rowStartIndex: number,
+  rowStopIndex: number,
+  itemKey: ItemKeyBuilder<T>,
+  data: T
+) => CellProps[];
+
+type ItemKeyBuilder<T> = (params: {|
+  columnIndex: number,
+  data: T,
+  rowIndex: number,
+|}) => any;
+
 export type Props<T> = {|
   children: RenderComponent<T>,
   className?: string,
@@ -75,11 +96,7 @@ export type Props<T> = {|
   innerElementType?: string | React$AbstractComponent<InnerProps, any>,
   innerTagName?: string, // deprecated
   itemData: T,
-  itemKey?: (params: {|
-    columnIndex: number,
-    data: T,
-    rowIndex: number,
-  |}) => any,
+  itemKey?: ItemKeyBuilder<T>,
   onItemsRendered?: OnItemsRenderedCallback,
   onScroll?: OnScrollCallback,
   outerRef?: any,
@@ -95,6 +112,7 @@ export type Props<T> = {|
   style?: Object,
   useIsScrolling: boolean,
   width: number,
+  cellAllocator?: CellAllocator<T>,
 |};
 
 type State = {|
@@ -410,6 +428,7 @@ export default function createGridComponent({
         style,
         useIsScrolling,
         width,
+        cellAllocator = defaultCellAllocator,
       } = this.props;
       const { isScrolling } = this.state;
 
@@ -419,31 +438,26 @@ export default function createGridComponent({
       ] = this._getHorizontalRangeToRender();
       const [rowStartIndex, rowStopIndex] = this._getVerticalRangeToRender();
 
-      const items = [];
-      if (columnCount > 0 && rowCount) {
-        for (
-          let rowIndex = rowStartIndex;
-          rowIndex <= rowStopIndex;
-          rowIndex++
-        ) {
-          for (
-            let columnIndex = columnStartIndex;
-            columnIndex <= columnStopIndex;
-            columnIndex++
-          ) {
-            items.push(
-              createElement(children, {
-                columnIndex,
+      const items =
+        columnCount > 0 && rowCount
+          ? cellAllocator(
+              columnStartIndex,
+              columnStopIndex,
+              rowStartIndex,
+              rowStopIndex,
+              itemKey,
+              itemData
+            ).map(cell => {
+              return createElement(children, {
+                columnIndex: cell.column,
                 data: itemData,
                 isScrolling: useIsScrolling ? isScrolling : undefined,
-                key: itemKey({ columnIndex, data: itemData, rowIndex }),
-                rowIndex,
-                style: this._getItemStyle(rowIndex, columnIndex),
-              })
-            );
-          }
-        }
-      }
+                key: cell.key,
+                rowIndex: cell.row,
+                style: this._getItemStyle(cell.row, cell.column),
+              });
+            })
+          : [];
 
       // Read this value AFTER items have been created,
       // So their actual sizes (if variable) are taken into consideration.
@@ -917,3 +931,29 @@ const validateSharedProps = (
     }
   }
 };
+
+function defaultCellAllocator<T>(
+  columnStartIndex: number,
+  columnStopIndex: number,
+  rowStartIndex: number,
+  rowStopIndex: number,
+  itemKey: ItemKeyBuilder<T>,
+  itemData: T
+) {
+  let items = [];
+  for (let rowIndex = rowStartIndex; rowIndex <= rowStopIndex; rowIndex++) {
+    for (
+      let columnIndex = columnStartIndex;
+      columnIndex <= columnStopIndex;
+      columnIndex++
+    ) {
+      items.push({
+        row: rowIndex,
+        column: columnIndex,
+        key: itemKey({ columnIndex, data: itemData, rowIndex }),
+      });
+    }
+  }
+
+  return items;
+}
